@@ -16,7 +16,7 @@ final case class Circle(origin: Coord, z: Float, fill: RGBA, radius: Float) exte
 final case class Meta(authorInfo: AuthorInfo, title: String)
 final case class AuthorInfo(name: String, email: String)
 
-import shapeless.labelled.FieldType
+import shapeless.labelled.{FieldType, KeyTag}
 import shapeless.{HList, HNil, LabelledGeneric, Lazy, Witness, :: => :*:, _}
 
 def absurd[T](void: CNil): T = throw new Error("ex falso quodlibet")
@@ -36,18 +36,10 @@ object Serializer extends SerializerLowPrio {
 
   implicit def floatSerializer: Serializer[Float] = _.toString
 
-  private[this] def seqRecurse[T: Serializer](agg: String, xs: Seq[T]): String = xs match {
-    case x :: xs => seqRecurse(agg + ", " + implicitly[Serializer[T]].serialize(x), xs)
-    case Nil => agg + "]"
-  }
-
-  implicit def seqSerializer[T: Serializer]: Serializer[Seq[T]] = {
-    case x :: xs => seqRecurse("[" + implicitly[Serializer[T]].serialize(x), xs)
-    case Nil => "[]"
-  }
+  implicit def seqSerializer[T: Serializer]: Serializer[Seq[T]] =
+    xs => "[" + xs.map(implicitly[Serializer[T]].serialize).mkString(", ") + "]"
 
   implicit val strSerializer: Serializer[String] = x => "\"" + x + "\""
-
 }
 trait SerializerLowPrio {
   implicit def genericSerializer[T, Repr](implicit
@@ -78,7 +70,7 @@ trait SerializerLowPrio {
     case Inr(r) => st.value.serialize(r)
   }
 
-  def absurd[T](void: CNil): T = throw new Error("ex falso quodlibet")
+  def absurd[T](void: CNil): T = void.impossible
 
   implicit val cNilFormat: Serializer[CNil] = absurd
 }
@@ -150,6 +142,10 @@ object FieldNames {
 
 implicitly[FieldNames[Silly]].names.foreach(println)
 
+assert( Inl(())      != Inr(Inl(())) )        // X != Y
+assert( Inl(())      != Inr(Inr(Inl(()))) )   // X != Z
+assert( Inr(Inl(())) != Inr(Inr(Inl(()))) )   // Y != Z
+
 val union = Generic[Shape]
 
 union.to(Rectangle((4.0f, 3.4f), 2.0f, RGBA(1, 2, 3, 4), (4.0f, 3.4f)))
@@ -164,3 +160,20 @@ serialize(Scene(
     Circle((3f, 2f), 2.0f, RGBA(0, 0, 0, 0), 6)
   ),
   Meta(AuthorInfo("David", "david@nomail.com"), "Tutorial")))
+
+import shapeless.syntax.singleton._
+
+//trait theMeaningOfLife
+
+def tagOf[T](n: FieldType[T, Int])(implicit ev: Witness.Aux[T]) = ev.value.toString
+
+val theNumber42 = "theMeaningOfLife" ->> 42 // tag with a string
+val theNumber13 = 'unlocky ->> 13           // tag a symbol
+
+object YouAreTheBest
+
+val theNumber1 = YouAreTheBest ->> 1        // tag with an object
+
+tagOf(theNumber42)
+tagOf(theNumber13)
+tagOf(theNumber1)
